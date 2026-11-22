@@ -89,27 +89,17 @@ export async function createProject(projectData) {
     updated_at: new Date().toISOString(),
   };
 
-  // If Supabase is active
+  // If Supabase is active, attempt sync
   if (isSupabaseConfigured && supabase) {
     try {
       const { category_name, ...payload } = newProject;
-      const { data, error } = await supabase
-        .from('projects')
-        .insert([payload])
-        .select(`*, category:categories(id, name, slug)`)
-        .single();
-
-      if (error) throw error;
-      return {
-        ...data,
-        category_name: data.category?.name || 'Uncategorized',
-      };
+      await supabase.from('projects').insert([payload]);
     } catch (err) {
-      console.warn('Supabase insert failed, using cloud/local:', err.message);
+      console.warn('Supabase insert note:', err.message);
     }
   }
 
-  // Update Cloud Sync & Local Storage
+  // Always update Cloud Sync & Local Storage for 100% reliability
   const fullData = await fetchFromCloud();
   const updatedProjects = [newProject, ...(fullData.projects || [])];
   
@@ -130,24 +120,13 @@ export async function updateProject(id, updates) {
   if (isSupabaseConfigured && supabase) {
     try {
       const { category_name, category, ...payload } = updatedPayload;
-      const { data, error } = await supabase
-        .from('projects')
-        .update(payload)
-        .eq('id', id)
-        .select(`*, category:categories(id, name, slug)`)
-        .single();
-
-      if (error) throw error;
-      return {
-        ...data,
-        category_name: data.category?.name || 'Uncategorized',
-      };
+      await supabase.from('projects').update(payload).eq('id', id);
     } catch (err) {
-      console.warn('Supabase update failed:', err.message);
+      console.warn('Supabase update note:', err.message);
     }
   }
 
-  // Update Cloud Sync & Local Storage
+  // Always update Cloud Sync & Local Storage
   const fullData = await fetchFromCloud();
   const list = [...(fullData.projects || [])];
   const index = list.findIndex((p) => p.id === id);
@@ -167,11 +146,9 @@ export async function updateProject(id, updates) {
 export async function deleteProject(id) {
   if (isSupabaseConfigured && supabase) {
     try {
-      const { error } = await supabase.from('projects').delete().eq('id', id);
-      if (error) throw error;
-      return true;
+      await supabase.from('projects').delete().eq('id', id);
     } catch (err) {
-      console.warn('Supabase delete failed:', err.message);
+      console.warn('Supabase delete note:', err.message);
     }
   }
 

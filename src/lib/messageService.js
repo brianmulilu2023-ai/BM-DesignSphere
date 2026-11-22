@@ -55,20 +55,13 @@ export async function sendMessage(messageData) {
 
   if (isSupabaseConfigured && supabase) {
     try {
-      const { data, error } = await supabase
-        .from('messages')
-        .insert([payload])
-        .select()
-        .single();
-
-      if (error) throw error;
-      return data;
+      await supabase.from('messages').insert([payload]);
     } catch (err) {
-      console.warn('Supabase send message error, saving to cloud/local:', err.message);
+      console.warn('Supabase send message note:', err.message);
     }
   }
 
-  // Save to Cloud Sync & Local
+  // Always save to Cloud Sync & Local
   const fullData = await fetchFromCloud();
   const list = [payload, ...(fullData.messages || [])];
 
@@ -83,21 +76,13 @@ export async function sendMessage(messageData) {
 export async function markMessageAsRead(id, isRead = true) {
   if (isSupabaseConfigured && supabase) {
     try {
-      const { data, error } = await supabase
-        .from('messages')
-        .update({ is_read: isRead })
-        .eq('id', id)
-        .select()
-        .single();
-
-      if (error) throw error;
-      return data;
+      await supabase.from('messages').update({ is_read: isRead }).eq('id', id);
     } catch (err) {
-      console.warn('Supabase mark message read error:', err.message);
+      console.warn('Supabase mark message read note:', err.message);
     }
   }
 
-  // Save to Cloud Sync & Local
+  // Always save to Cloud Sync & Local
   const fullData = await fetchFromCloud();
   const list = [...(fullData.messages || [])];
   const index = list.findIndex((m) => m.id === id);
@@ -117,15 +102,13 @@ export async function markMessageAsRead(id, isRead = true) {
 export async function deleteMessage(id) {
   if (isSupabaseConfigured && supabase) {
     try {
-      const { error } = await supabase.from('messages').delete().eq('id', id);
-      if (error) throw error;
-      return true;
+      await supabase.from('messages').delete().eq('id', id);
     } catch (err) {
-      console.warn('Supabase delete message error:', err.message);
+      console.warn('Supabase delete message note:', err.message);
     }
   }
 
-  // Save to Cloud Sync & Local
+  // Always save to Cloud Sync & Local
   const fullData = await fetchFromCloud();
   const filtered = (fullData.messages || []).filter((m) => m.id !== id);
 

@@ -57,20 +57,13 @@ export async function createCategory({ name, slug }) {
 
   if (isSupabaseConfigured && supabase) {
     try {
-      const { data, error } = await supabase
-        .from('categories')
-        .insert([newCat])
-        .select()
-        .single();
-
-      if (error) throw error;
-      return data;
+      await supabase.from('categories').insert([newCat]);
     } catch (err) {
-      console.warn('Supabase insert category error:', err.message);
+      console.warn('Supabase insert category note:', err.message);
     }
   }
 
-  // Update Cloud Sync & Local
+  // Always update Cloud Sync & Local
   const fullData = await fetchFromCloud();
   const list = [...(fullData.categories || []), newCat];
 
@@ -94,21 +87,13 @@ export async function updateCategory(id, { name, slug }) {
 
   if (isSupabaseConfigured && supabase) {
     try {
-      const { data, error } = await supabase
-        .from('categories')
-        .update(updates)
-        .eq('id', id)
-        .select()
-        .single();
-
-      if (error) throw error;
-      return data;
+      await supabase.from('categories').update(updates).eq('id', id);
     } catch (err) {
-      console.warn('Supabase update category error:', err.message);
+      console.warn('Supabase update category note:', err.message);
     }
   }
 
-  // Update Cloud Sync & Local
+  // Always update Cloud Sync & Local
   const fullData = await fetchFromCloud();
   const list = [...(fullData.categories || [])];
   const index = list.findIndex((c) => c.id === id);
@@ -136,15 +121,13 @@ export async function deleteCategory(id) {
 
   if (isSupabaseConfigured && supabase) {
     try {
-      const { error } = await supabase.from('categories').delete().eq('id', id);
-      if (error) throw error;
-      return true;
+      await supabase.from('categories').delete().eq('id', id);
     } catch (err) {
-      console.warn('Supabase delete category error:', err.message);
+      console.warn('Supabase delete category note:', err.message);
     }
   }
 
-  // Update Cloud Sync & Local
+  // Always update Cloud Sync & Local
   const fullData = await fetchFromCloud();
   const filtered = (fullData.categories || []).filter((c) => c.id !== id);
 

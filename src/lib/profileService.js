@@ -60,10 +60,14 @@ export async function updateProfile(profileData) {
         res = await supabase.from('profiles').insert([updated]).select().single();
       }
 
-      if (res.error) throw res.error;
-      return res.data;
+      if (res && !res.error && res.data) {
+        return res.data;
+      }
+      if (res?.error) {
+        console.warn('Supabase profile update warning:', res.error.message);
+      }
     } catch (err) {
-      console.warn('Supabase update profile error:', err.message);
+      console.warn('Supabase update profile error, smoothly using cloud/local:', err.message);
     }
   }
 
