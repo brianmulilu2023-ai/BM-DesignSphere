@@ -23,7 +23,8 @@ export function getCloudSyncId() {
   const localId = localStorage.getItem(CLOUD_SYNC_ID_KEY);
   if (localId && localId.trim()) return localId.trim();
 
-  return null;
+  // Pre-configured active Pantry ID for Victor Graphics
+  return '7679ab0e-3bd9-467d-a400-33774600bb32';
 }
 
 // Save Cloud ID locally
