@@ -1,7 +1,9 @@
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+const rawUrl = (import.meta.env.VITE_SUPABASE_URL || '').trim();
+// Automatically clean URL (strip /rest/v1 or trailing slashes if user copied from dashboard)
+const supabaseUrl = rawUrl.replace(/\/rest\/v1\/?$/, '').replace(/\/+$/, '');
+const supabaseAnonKey = (import.meta.env.VITE_SUPABASE_ANON_KEY || '').trim();
 
 // Check if credentials are valid and not default placeholders
 export const isSupabaseConfigured = Boolean(
@@ -33,6 +35,13 @@ export async function checkSupabaseConnection() {
   try {
     const { data, error } = await supabase.from('categories').select('count', { count: 'exact', head: true });
     if (error) {
+      if (error.code === 'PGRST205' || error.message.includes('schema cache') || error.message.includes('not found')) {
+        return {
+          connected: false,
+          needsSchema: true,
+          message: 'Connected to Supabase project, but tables are not created yet! Run supabase_schema.sql in your Supabase SQL Editor.'
+        };
+      }
       return {
         connected: false,
         message: `Supabase error: ${error.message}`
@@ -49,4 +58,3 @@ export async function checkSupabaseConnection() {
     };
   }
 }
-
