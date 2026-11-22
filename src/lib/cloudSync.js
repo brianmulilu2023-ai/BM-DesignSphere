@@ -101,46 +101,61 @@ async function fetchWithTimeout(resource, options = {}, timeout = 6000) {
 // CLOUD API METHODS
 // ==============================================================================
 
+// In-flight promise cache to deduplicate simultaneous requests
+let inFlightFetch = null;
+
 // Fetch live portfolio data from Cloud
 export async function fetchFromCloud() {
-  const pantryId = getCloudSyncId();
-  if (!pantryId) {
-    return getLocalData();
+  if (inFlightFetch) {
+    return inFlightFetch;
   }
 
-  const endpoint = `https://getpantry.cloud/apiv1/pantry/${pantryId}/basket/${BASKET_NAME}`;
-
-  try {
-    const response = await fetchWithTimeout(endpoint, {
-      method: 'GET',
-      headers: { 'Content-Type': 'application/json' },
-    }, 7000);
-
-    if (response.status === 404) {
-      console.log('Pantry basket not found. Initializing with local data...');
-      const local = getLocalData();
-      await pushToCloud(local);
-      return local;
+  inFlightFetch = (async () => {
+    const pantryId = getCloudSyncId();
+    if (!pantryId) {
+      return getLocalData();
     }
 
-    if (!response.ok) {
-      throw new Error(`Cloud sync error (${response.status})`);
+    // Use cache-busting query parameter and no-store so the browser never serves stale cached data
+    const endpoint = `https://getpantry.cloud/apiv1/pantry/${pantryId}/basket/${BASKET_NAME}?_t=${Date.now()}`;
+
+    try {
+      const response = await fetchWithTimeout(endpoint, {
+        method: 'GET',
+        cache: 'no-store',
+        headers: { 'Content-Type': 'application/json' },
+      }, 7000);
+
+      if (response.status === 404) {
+        console.log('Pantry basket not found. Initializing with local data...');
+        const local = getLocalData();
+        await pushToCloud(local);
+        return local;
+      }
+
+      if (!response.ok) {
+        throw new Error(`Cloud sync error (${response.status})`);
+      }
+
+      const data = await response.json();
+      saveLocalData(data);
+      localStorage.setItem(STORAGE_KEYS.lastSynced, new Date().toISOString());
+
+      return {
+        projects: data.projects || initialSeedData.projects,
+        categories: data.categories || initialSeedData.categories,
+        profile: data.profile || initialSeedData.profile,
+        messages: data.messages || initialSeedData.messages,
+      };
+    } catch (err) {
+      console.warn('Failed to load from cloud sync, using local fallback:', err.message);
+      return getLocalData();
+    } finally {
+      inFlightFetch = null;
     }
+  })();
 
-    const data = await response.json();
-    saveLocalData(data);
-    localStorage.setItem(STORAGE_KEYS.lastSynced, new Date().toISOString());
-
-    return {
-      projects: data.projects || initialSeedData.projects,
-      categories: data.categories || initialSeedData.categories,
-      profile: data.profile || initialSeedData.profile,
-      messages: data.messages || initialSeedData.messages,
-    };
-  } catch (err) {
-    console.warn('Failed to load from cloud sync, using local fallback:', err.message);
-    return getLocalData();
-  }
+  return inFlightFetch;
 }
 
 // Push live portfolio data to Cloud
@@ -165,17 +180,23 @@ export async function pushToCloud(data) {
   };
 
   try {
-    await fetchWithTimeout(endpoint, {
+    const response = await fetchWithTimeout(endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
-    }, 8000);
+    }, 10000);
+
+    if (!response.ok) {
+      const errText = await response.text();
+      console.error(`Pantry Cloud push returned ${response.status}:`, errText);
+      throw new Error(`Cloud save rejected (${response.status}): ${errText}`);
+    }
 
     localStorage.setItem(STORAGE_KEYS.lastSynced, new Date().toISOString());
     return { success: true, cloud: true };
   } catch (err) {
-    console.warn('Cloud push warning (local saved):', err.message);
-    return { success: true, localOnly: true, warning: err.message };
+    console.error('Cloud push error:', err);
+    throw err;
   }
 }
 
