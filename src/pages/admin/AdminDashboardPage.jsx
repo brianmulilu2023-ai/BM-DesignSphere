@@ -11,7 +11,10 @@ import {
   Eye,
   Calendar,
   Sparkles,
-  ExternalLink
+  ExternalLink,
+  Cloud,
+  AlertTriangle,
+  ArrowRight
 } from 'lucide-react';
 import { AdminHeader } from '../../components/admin/AdminHeader';
 import { StatCard } from '../../components/admin/StatCard';
@@ -20,6 +23,8 @@ import { Badge } from '../../components/common/Badge';
 import { fetchProjects } from '../../lib/portfolioService';
 import { fetchCategories } from '../../lib/categoryService';
 import { fetchMessages } from '../../lib/messageService';
+import { isCloudSyncConfigured } from '../../lib/cloudSync';
+import { isSupabaseConfigured } from '../../lib/supabase';
 
 export function AdminDashboardPage() {
   const { setSidebarOpen } = useOutletContext();
@@ -34,6 +39,8 @@ export function AdminDashboardPage() {
   });
   const [recentProjects, setRecentProjects] = useState([]);
   const [recentMessages, setRecentMessages] = useState([]);
+
+  const isLiveConnected = isCloudSyncConfigured() || isSupabaseConfigured;
 
   useEffect(() => {
     async function loadDashboardData() {
@@ -76,6 +83,30 @@ export function AdminDashboardPage() {
         title="Studio Dashboard"
         subtitle="Overview of your creative portfolio, content metrics and client inquiries."
       />
+
+      {/* Cloud Sync Warning Banner if running locally */}
+      {!isLiveConnected && (
+        <div className="p-4 sm:p-5 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 text-left">
+          <div className="flex items-start gap-3.5">
+            <div className="w-10 h-10 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center flex-shrink-0 mt-0.5">
+              <AlertTriangle className="w-5 h-5" />
+            </div>
+            <div>
+              <h4 className="text-sm font-bold text-amber-300">
+                Notice: Running in Local Mode (Browser Storage Only)
+              </h4>
+              <p className="text-xs text-neutral-300 mt-0.5 leading-relaxed">
+                Changes made right now only appear on <strong>this specific browser</strong>. To make your changes visible to all live visitors worldwide immediately <em>without touching Supabase</em>, connect <strong>Free Cloud Sync</strong> in 30 seconds!
+              </p>
+            </div>
+          </div>
+          <Link to="/admin/settings" className="flex-shrink-0 w-full sm:w-auto">
+            <Button size="sm" rightIcon={ArrowRight} className="w-full bg-amber-500 hover:bg-amber-600 border-amber-500 text-black font-bold">
+              Connect Free Cloud Sync
+            </Button>
+          </Link>
+        </div>
+      )}
 
       {/* Quick Action Top Bar */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 p-6 rounded-2xl bg-[#111111] border border-[#222222]">

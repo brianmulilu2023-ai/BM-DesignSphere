@@ -1,26 +1,23 @@
 import { supabase, isSupabaseConfigured } from './supabase';
-import { INITIAL_PROFILE } from './mockData';
-
-const LOCAL_STORAGE_KEY = 'vg_portfolio_profile';
-
-function getLocalProfile() {
-  const stored = localStorage.getItem(LOCAL_STORAGE_KEY);
-  if (!stored) {
-    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(INITIAL_PROFILE));
-    return INITIAL_PROFILE;
-  }
-  try {
-    return JSON.parse(stored);
-  } catch (e) {
-    return INITIAL_PROFILE;
-  }
-}
-
-function saveLocalProfile(profile) {
-  localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(profile));
-}
+import {
+  isCloudSyncConfigured,
+  fetchFromCloud,
+  pushToCloud,
+  getLocalData,
+} from './cloudSync';
 
 export async function fetchProfile() {
+  // 1. Try Cloud Sync
+  if (isCloudSyncConfigured()) {
+    try {
+      const data = await fetchFromCloud();
+      if (data.profile) return data.profile;
+    } catch (e) {
+      console.warn('Cloud sync profile fetch failed:', e);
+    }
+  }
+
+  // 2. Try Supabase
   if (isSupabaseConfigured && supabase) {
     try {
       const { data, error } = await supabase
@@ -36,18 +33,20 @@ export async function fetchProfile() {
     }
   }
 
-  return getLocalProfile();
+  // 3. Local fallback
+  const { profile } = getLocalData();
+  return profile;
 }
 
 export async function updateProfile(profileData) {
   const updated = {
     ...profileData,
-    updated_at: new Date().toISOString()
+    updated_at: new Date().toISOString(),
   };
 
+  // If Supabase is active
   if (isSupabaseConfigured && supabase) {
     try {
-      // If profile exists, update; else insert
       const existing = await fetchProfile();
       let res;
       if (existing && existing.id) {
@@ -58,11 +57,7 @@ export async function updateProfile(profileData) {
           .select()
           .single();
       } else {
-        res = await supabase
-          .from('profiles')
-          .insert([updated])
-          .select()
-          .single();
+        res = await supabase.from('profiles').insert([updated]).select().single();
       }
 
       if (res.error) throw res.error;
@@ -72,8 +67,14 @@ export async function updateProfile(profileData) {
     }
   }
 
-  const local = { ...getLocalProfile(), ...updated };
-  saveLocalProfile(local);
-  return local;
-}
+  // Update Cloud Sync & Local Storage
+  const fullData = await fetchFromCloud();
+  const newProfile = { ...(fullData.profile || {}), ...updated };
 
+  await pushToCloud({
+    ...fullData,
+    profile: newProfile,
+  });
+
+  return newProfile;
+}

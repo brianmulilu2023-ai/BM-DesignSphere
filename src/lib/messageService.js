@@ -1,26 +1,23 @@
 import { supabase, isSupabaseConfigured } from './supabase';
-import { INITIAL_MESSAGES } from './mockData';
-
-const LOCAL_STORAGE_KEY = 'vg_portfolio_messages';
-
-function getLocalMessages() {
-  const stored = localStorage.getItem(LOCAL_STORAGE_KEY);
-  if (!stored) {
-    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(INITIAL_MESSAGES));
-    return INITIAL_MESSAGES;
-  }
-  try {
-    return JSON.parse(stored);
-  } catch (e) {
-    return INITIAL_MESSAGES;
-  }
-}
-
-function saveLocalMessages(msgs) {
-  localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(msgs));
-}
+import {
+  isCloudSyncConfigured,
+  fetchFromCloud,
+  pushToCloud,
+  getLocalData,
+} from './cloudSync';
 
 export async function fetchMessages() {
+  // 1. Try Cloud Sync
+  if (isCloudSyncConfigured()) {
+    try {
+      const data = await fetchFromCloud();
+      if (data.messages) return data.messages;
+    } catch (e) {
+      console.warn('Cloud sync messages fetch failed:', e);
+    }
+  }
+
+  // 2. Try Supabase
   if (isSupabaseConfigured && supabase) {
     try {
       const { data, error } = await supabase
@@ -35,23 +32,25 @@ export async function fetchMessages() {
     }
   }
 
-  return getLocalMessages();
+  // 3. Local fallback
+  const { messages } = getLocalData();
+  return messages || [];
 }
 
 export async function sendMessage(messageData) {
-  // Basic validation & anti-spam guard
   if (!messageData.sender_name || !messageData.sender_email || !messageData.message) {
     throw new Error('Please fill in all required fields.');
   }
 
   const payload = {
+    id: 'msg-' + Date.now().toString(36),
     sender_name: messageData.sender_name.trim(),
     sender_email: messageData.sender_email.trim(),
     sender_phone: messageData.sender_phone ? messageData.sender_phone.trim() : null,
     project_type: messageData.project_type || 'General Inquiry',
     message: messageData.message.trim(),
     is_read: false,
-    created_at: new Date().toISOString()
+    created_at: new Date().toISOString(),
   };
 
   if (isSupabaseConfigured && supabase) {
@@ -65,18 +64,20 @@ export async function sendMessage(messageData) {
       if (error) throw error;
       return data;
     } catch (err) {
-      console.warn('Supabase send message error, saving locally:', err.message);
+      console.warn('Supabase send message error, saving to cloud/local:', err.message);
     }
   }
 
-  const list = getLocalMessages();
-  const created = {
-    ...payload,
-    id: 'msg-' + Date.now().toString(36)
-  };
-  list.unshift(created);
-  saveLocalMessages(list);
-  return created;
+  // Save to Cloud Sync & Local
+  const fullData = await fetchFromCloud();
+  const list = [payload, ...(fullData.messages || [])];
+
+  await pushToCloud({
+    ...fullData,
+    messages: list,
+  });
+
+  return payload;
 }
 
 export async function markMessageAsRead(id, isRead = true) {
@@ -96,24 +97,27 @@ export async function markMessageAsRead(id, isRead = true) {
     }
   }
 
-  const list = getLocalMessages();
-  const index = list.findIndex(m => m.id === id);
+  // Save to Cloud Sync & Local
+  const fullData = await fetchFromCloud();
+  const list = [...(fullData.messages || [])];
+  const index = list.findIndex((m) => m.id === id);
+
   if (index !== -1) {
     list[index].is_read = isRead;
-    saveLocalMessages(list);
+    await pushToCloud({
+      ...fullData,
+      messages: list,
+    });
     return list[index];
   }
+
   throw new Error('Message not found');
 }
 
 export async function deleteMessage(id) {
   if (isSupabaseConfigured && supabase) {
     try {
-      const { error } = await supabase
-        .from('messages')
-        .delete()
-        .eq('id', id);
-
+      const { error } = await supabase.from('messages').delete().eq('id', id);
       if (error) throw error;
       return true;
     } catch (err) {
@@ -121,9 +125,14 @@ export async function deleteMessage(id) {
     }
   }
 
-  const list = getLocalMessages();
-  const filtered = list.filter(m => m.id !== id);
-  saveLocalMessages(filtered);
+  // Save to Cloud Sync & Local
+  const fullData = await fetchFromCloud();
+  const filtered = (fullData.messages || []).filter((m) => m.id !== id);
+
+  await pushToCloud({
+    ...fullData,
+    messages: filtered,
+  });
+
   return true;
 }
-
